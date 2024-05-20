@@ -1,17 +1,10 @@
 #include "grep_func.h"
 
+#include <regex.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-// Тебе необходимо разработать утилиту grep:
-// - Поддержка следующих флагов: `-e`, `-i`, `-v`, `-c`, `-l`, `-n`
-// - Для регулярных выражений можно использовать только библиотеки pcre или regex  
-// - Исходные, заголовочные и make файлы должны располагаться в директории src/grep/
-// - Итоговый исполняемый файл должен располагаться в директории src/grep/ и называться s21_grep
-
-// ### Опции grep 
 
 // | № | Опции | Описание |
 // | ------ | ------ | ------ |
@@ -22,7 +15,7 @@
 // | 5 | -l | Выводит только совпадающие файлы.  |
 // | 6 | -n | Предваряет каждую строку вывода номером строки из файла ввода. |
 
-// ### Использование grep 
+// ### Использование grep
 
 // `grep [options] template [file_name]`
 
@@ -39,16 +32,66 @@ void run_grep(int argc, char** argv) {
 
   if (valid == 0) {
     opter(&flags, argc, argv);
+    grep_func(existing_files, patterns, count_files, count_patterns);
   }
 
   free_list(patterns, count_patterns);
   free_list(existing_files, count_files);
+}
 
-  // delete this line later
-  if (valid == -1) {
-    printf("Program didn't start");
-  } else {
-    printf("Program started");
+void grep_func(char** existing_files, char** patterns, int count_files,
+               int count_patterns) {
+  int reti;
+  char msgbuf[100];
+  for (int i = 0; i < count_files; i++) {
+    FILE* file = fopen(existing_files[i], "r");
+    if (file == NULL) {
+      fprintf(stderr, "Could not open file: %s\n", existing_files[i]);
+      continue;
+    }
+    regex_t regex[count_patterns];
+    int compile_success = 1;
+    for (int j = 0; j < count_patterns; j++) {
+      reti = regcomp(&regex[j], patterns[j], 0);
+      if (reti) {
+        fprintf(stderr, "Could not compile regex for pattern %s\n",
+                patterns[j]);
+        compile_success = 0;
+        break;
+      }
+    }
+    if (!compile_success) {
+      fclose(file);
+      for (int k = 0; k < count_patterns; k++) {
+        regfree(&regex[k]);
+      }
+      continue;
+    }
+
+    char* line = NULL;
+    size_t len = 0;
+    ssize_t read;
+    while ((read = getline(&line, &len, file)) != -1) {
+      for (int j = 0; j < count_patterns; j++) {
+        reti = regexec(&regex[j], line, 0, NULL, 0);
+        if (!reti) {
+          printf("%s", line);
+        } else if (reti == REG_NOMATCH) {
+          continue;
+        } else {
+          regerror(reti, &regex[j], msgbuf, sizeof(msgbuf));
+          fprintf(stderr, "Regex match failed: %s\n", msgbuf);
+        }
+      }
+    }
+    fclose(file);
+    if (line != NULL) {
+      free(line);
+      line = NULL;
+    }
+    for (int k = 0; k < count_patterns; k++) {
+      regfree(&regex[k]);
+    }
   }
 }
 
